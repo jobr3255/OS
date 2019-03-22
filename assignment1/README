@@ -1,0 +1,69 @@
+Assignment 1
+============
+
+2/4/19 </br>
+Josh Brown </br>
+jobr3255@colorado.edu
+
+### Compiling the program
+`` $ ./compile.sh ``
+
+This will call the necessary commans to compile the kernel
+
+### Running test program
+Replace <#> with the assignment number
+``$ cd hw_scripts``</br>
+``$ sudo ./assignment<#>.sh ``
+
+### Adding new system calls
+First create a new file for the c program using
+
+``$ sudo gedit arch/x86/kernel/helloworld.c``
+
+Make sure to rename your file to something else. The file should look something like this
+
+```
+#include <linux/kernel.h>
+#include <linux/linkage.h>
+asmlinkage long sys_helloworld(void)
+{
+  printk(KERN_ALERT "hello world\n");
+  return 0;
+}
+```
+Now open the Makefile and add the name of your file to the very end of the definition list
+
+``$ sudo gedit arch/x86/kernel/Makefile``
+
+```
+...
+obj-y+=helloworld.o
+```
+Now open syscall_64.tbl and add your new system call
+
+``$ sudo gedit arch/x86/entry/syscalls/syscall_64.tbl``
+```
+...
+332	common	statx			sys_statx
+333	64    	hello			sys_helloworld
+```
+
+Now add the new system call in the system call header file
+
+``$ sudo gedit include/linux/syscalls.h``
+```
+...
+asmlinkage long sys_helloworld(void);
+```
+
+### Build Tree
+
+```
+/home/kernel/linux-hwe-4.15.0/arch/x86/kernel/Simple_add.c
+/home/kernel/linux-hwe-4.15.0/arch/x86/kernel/Makefile
+/home/kernel/linux-hwe-4.15.0/arch/x86/entry/entry/syscalls/syscall_64.tbl
+/home/kernel/linux-hwe-4.15.0/include/linux/syscalls.h
+/home/kernel/linux-hwe-4.15.0/hw_scripts/add.c
+/home/kernel/linux-hwe-4.15.0/hw_scripts/assignment.sh
+/home/kernel/linux-hwe-4.15.0/compile.sh
+```
