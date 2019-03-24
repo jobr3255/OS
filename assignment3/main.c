@@ -39,7 +39,7 @@ void* request(void* id){
 	FILE* inputfp = thread->thread_file; //Input file
 	pthread_mutex_t* buffmutex = thread->buffmutex; //Buffer mutex
 	queue* buffer = thread->buffer; //Queue
-
+	printf("%lu starting to read file\n", pthread_self());
    	while(fscanf(inputfp, INPUTFS, hostname) > 0){ //Read input and push onto buffer
 		while(!done){ //Repeat until the current hostname is pushed to the queue
 			domain = malloc(SBUFSIZE); //allocate memory for dmain
