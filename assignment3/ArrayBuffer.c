@@ -10,34 +10,36 @@ typedef struct Node{
 
 typedef struct ArrayBuffer{
     Node* array;
-    int front;
-    int rear;
+    int front; // index of front of array
+    int rear; // index of end of array
     int maxSize;
+    bool finishedReading; // keeps track if the requesters are done reading
 } ArrayBuffer;
 
-int queue_init(ArrayBuffer* q, int size){
+int buffer_init(ArrayBuffer* buffer, int size){
+    buffer->finishedReading = false;
     if(size>0) {
-        q->maxSize = size;
+        buffer->maxSize = size;
     } else {
-        q->maxSize = MAXSIZE;
+        buffer->maxSize = MAXSIZE;
     }
     // allocate memory for node in array
-    q->array = malloc(sizeof(Node) * (q->maxSize));
-    if(!(q->array)){
-        perror("Error on queue Malloc");
+    buffer->array = malloc(sizeof(Node) * (buffer->maxSize));
+    if(!(buffer->array)){
+        perror("Error durring buffer init");
         return false;
     }
     // set all array values to NULL
-    for(int i=0; i < q->maxSize; ++i){
-        q->array[i].value = NULL;
+    for(int i=0; i < buffer->maxSize; ++i){
+        buffer->array[i].value = NULL;
     }
-    q->front = 0;
-    q->rear = 0;
-    return q->maxSize;
+    buffer->front = 0;
+    buffer->rear = 0;
+    return buffer->maxSize;
 }
 
-int queue_is_empty(ArrayBuffer* q){
-    if((q->front == q->rear) && (q->array[q->front].value == NULL)){
+int buffer_is_empty(ArrayBuffer* buffer){
+    if((buffer->front == buffer->rear) && (buffer->array[buffer->front].value == NULL)){
         return 1;
     }
     else{
@@ -45,38 +47,47 @@ int queue_is_empty(ArrayBuffer* q){
     }
 }
 
-int queue_is_full(ArrayBuffer* q){
-    if((q->front == q->rear) && (q->array[q->front].value != NULL)){
+int buffer_is_full(ArrayBuffer* buffer){
+    if((buffer->front == buffer->rear) && (buffer->array[buffer->front].value != NULL)){
         return 1;
     }
 	return 0;
 }
 
-void* queue_pop(ArrayBuffer* q){
+void* buffer_pop(ArrayBuffer* buffer){
     void* ret_value;
-    if(queue_is_empty(q)){
-	       return NULL;
+    if(buffer_is_empty(buffer)){
+        return NULL;
     }
-    ret_value = q->array[q->front].value;
-    q->array[q->front].value = NULL;
-    q->front = ((q->front + 1) % q->maxSize);
+    ret_value = buffer->array[buffer->front].value;
+    buffer->array[buffer->front].value = NULL;
+    buffer->front = ((buffer->front + 1) % buffer->maxSize);
     return ret_value;
 }
 
-int queue_push(ArrayBuffer* q, void* new_value){
-    if(queue_is_full(q)){
+// push value into buffer if not full
+int buffer_push(ArrayBuffer* buffer, void* new_value){
+    if(buffer_is_full(buffer)){
         return false;
     }
-    q->array[q->rear].value = new_value;
-    q->rear = ((q->rear+1) % q->maxSize);
+    buffer->array[buffer->rear].value = new_value;
+    buffer->rear = ((buffer->rear+1) % buffer->maxSize);
     return true;
 }
 
 // free all allocated memory
-void queue_cleanup(ArrayBuffer* q)
+void buffer_cleanup(ArrayBuffer* buffer)
 {
-    while(!queue_is_empty(q)){
-        queue_pop(q);
+    while(!buffer_is_empty(buffer)){
+        buffer_pop(buffer);
     }
-    free(q->array);
+    free(buffer->array);
+}
+
+int isFinished(ArrayBuffer* buffer){
+    return buffer->finishedReading;
+}
+
+void finished(ArrayBuffer* buffer){
+    buffer->finishedReading = true;
 }

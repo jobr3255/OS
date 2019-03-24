@@ -8,79 +8,113 @@
 #include <stdbool.h>
 #include "util.c"
 #include "ArrayBuffer.c"
+#include "FileBuffer.c"
+#include <sys/types.h>
+#include <sys/syscall.h>
 
 #define USAGE "multi-lookup <# requester> <# resolver> <requester log> <resolver log> [ <data file> ...]"
 #define MINARGS 6
 
-//Froom lookup.c
 #define SBUFSIZE 1025
 #define INPUTFS "%1024s"
 #define MAX_INPUT_FILES 10
 #define MAX_RESOLVER_THREADS 10
-#define MAX_REQUESTER_THREADS 10
+#define MAX_REQUESTER_THREADS 5
 #define MAX_NAME_LENGTHS 1025
 #define MAX_IP_LENGTH INET6_ADDRSTRLEN
-bool requests_exist = true;
+
+typedef struct ThreadInfo{
+    int filesServiced;
+    int tid;
+}ThreadInfo;
+
+typedef struct InputFiles{
+    FILE* fileArray;
+    int index;
+}InputFiles;
 
 //Threads
-struct thread{
+struct Thread{
 	ArrayBuffer* sharedBuffer;
-    FILE* thread_file;
+    FileBuffer* sharedInputFiles;
+    FileNode* currentFile;
+    FILE* readFile;
+    FILE* logFile;
     pthread_mutex_t* buffmutex;
     pthread_mutex_t* outmutex;
 };
 
-void* request(void* id){
-	struct thread* thread = id; //Make a thread to hold info
-   	char hostname[MAX_NAME_LENGTHS]; //hostname char arrays
+void* request(void* data){
+    // holds thread data
+	struct Thread* thread = data;
+   	char hostname[MAX_NAME_LENGTHS];
 	char *domain;
-	bool done = false; //flag
-	FILE* inputfp = thread->thread_file; //Input file
-	pthread_mutex_t* buffmutex = thread->buffmutex; //Buffer mutex
-	ArrayBuffer* sharedBuffer = thread->sharedBuffer; //Queue
-
-   	while(fscanf(inputfp, INPUTFS, hostname) > 0){ //Read input and push onto sharedBuffer
-		while(!done){ //Repeat until the current hostname is pushed to the ArrayBuffer
-			domain = malloc(SBUFSIZE); //allocate memory for dmain
-			strncpy(domain, hostname, SBUFSIZE); //copy hostname to domain, max number of characters
-			pthread_mutex_lock(buffmutex);//Lock the sharedBuffer, or try
-			while(queue_is_full(sharedBuffer)){ //When ArrayBuffer is full
-					pthread_mutex_unlock(buffmutex); 	//Unlock the sharedBuffer, or try
-					usleep(rand() % 100 + 5); //Wait 0-100 microseconds
-					pthread_mutex_lock(buffmutex); //Lock the sharedBuffer, or try
-			}
-        	queue_push(sharedBuffer, domain);
-			pthread_mutex_unlock(buffmutex); //Unlock!
-			done = true; //Indicate that this hostname was pushed successfully
+    // flag to check if domain name has been successfully pushed into buffer
+	bool done = false;
+    FileBuffer* sharedInputFiles = thread->sharedInputFiles;
+    FileNode* currentFileNode = thread->currentFile;
+	FILE* requestLog = thread->logFile;
+	FILE* inputfp;
+	pthread_mutex_t* buffmutex = thread->buffmutex;
+	ArrayBuffer* sharedBuffer = thread->sharedBuffer;
+    int filesServiced = 0;
+    pid_t tid = syscall(SYS_gettid);
+    while(!filesFinished(sharedInputFiles)){
+        inputfp = getFile(currentFileNode);
+       	while(fscanf(inputfp, INPUTFS, hostname) > 0){
+    		while(!done){
+    			domain = malloc(SBUFSIZE);
+    			strncpy(domain, hostname, SBUFSIZE);
+    			pthread_mutex_lock(buffmutex);
+    			while(buffer_is_full(sharedBuffer)){
+					pthread_mutex_unlock(buffmutex);
+					usleep(rand() % 100 + 5);
+					pthread_mutex_lock(buffmutex);
+    			}
+            	buffer_push(sharedBuffer, domain);
+    			pthread_mutex_unlock(buffmutex);
+    			done = true;
+        	}
+    		done = false;
     	}
-		done = false; //Reset pushed for the next hostname
-	}
+        filesServiced++;
+        printf("\nThread %d finished servicing file %d.\n\n", tid, currentFileNode->index);
+        finishFile(sharedInputFiles, currentFileNode);
+        currentFileNode = getNextFileNode(sharedInputFiles, currentFileNode);
+        if(!filesFinished(sharedInputFiles)){
+            printf("Thread %d will now start servicing file: %d\n", tid, currentFileNode->index);
+        }
+    }
+    ThreadInfo *values = malloc(sizeof(ThreadInfo));
+    values->tid = tid;
+    values->filesServiced = filesServiced;
+    pthread_exit( values );
     return NULL;
 }
 
-void* resolve(void* id){
-	struct thread* thread = id; //Make a thread to hold info
-   	char* domain; //domain char arrays
-	FILE* outfile = thread->thread_file; //Output file
-	pthread_mutex_t* buffmutex = thread->buffmutex; //Buffer mutex
-	pthread_mutex_t* outmutex = thread->outmutex; //Output mutex
-	ArrayBuffer* sharedBuffer = thread->sharedBuffer; //Queue
-	char ipstr[MAX_IP_LENGTH]; //IP Addresses
-    while(!queue_is_empty(sharedBuffer) || requests_exist){ //while the ArrayBuffer has stuff or there's request threads, loop
-		pthread_mutex_lock(buffmutex); //lock sharedBuffer
-		domain = queue_pop(sharedBuffer); //pop off ArrayBuffer
-		if(domain == NULL){ //if empty, unlock
+void* resolve(void* data){
+	struct Thread* thread = data;
+   	char* domain;
+	FILE* logFile = thread->logFile;
+	pthread_mutex_t* buffmutex = thread->buffmutex;
+	pthread_mutex_t* outmutex = thread->outmutex;
+	ArrayBuffer* sharedBuffer = thread->sharedBuffer;
+	char ipstr[MAX_IP_LENGTH];
+    while(!buffer_is_empty(sharedBuffer) || !isFinished(sharedBuffer)){
+		pthread_mutex_lock(buffmutex);
+		domain = buffer_pop(sharedBuffer);
+		if(domain == NULL){
 			pthread_mutex_unlock(buffmutex);
 			usleep(rand() % 100 + 5);
 		}
-		else { //Unlock and go!
+		else {
 			pthread_mutex_unlock(buffmutex);
-			if(dnslookup(domain, ipstr, sizeof(ipstr)) == UTIL_FAILURE)//look up domain, or try
+			if(dnslookup(domain, ipstr, sizeof(ipstr)) == UTIL_FAILURE)
 				strncpy(ipstr, "", sizeof(ipstr));
 			printf("%s:%s\n", domain, ipstr);
-            pthread_mutex_lock(outmutex); //lock output file, if possible
-			fprintf(outfile, "%s,%s\n", domain, ipstr); //write to output file
-			pthread_mutex_unlock(outmutex); //unlock output, if possible
+            pthread_mutex_lock(outmutex);
+			fprintf(logFile, "%s,%s\n", domain, ipstr);
+			pthread_mutex_unlock(outmutex);
     	}
 			free(domain);
 	}
@@ -102,10 +136,10 @@ int main(int argc, char * argv[]){
     char* resolversLogFileName = argv[4];
     int numInputFiles = argc - 5;
 
-
-	//Local variables (lookup.c)
-	ArrayBuffer sharedBuffer; //Hostname ArrayBuffer
-	FILE* outfile   = NULL; //output pointer
+	ArrayBuffer sharedBuffer;
+	FileBuffer sharedInputFiles;
+	FILE* requestLog = fopen(requesterLogFileName, "w");;
+	FILE* resolverLog = NULL;
 	FILE* inputfps[numInputFiles]; //Array of inputs
 	//Arrays of threads for requests and resolves
 	pthread_t requests[numRequesters];
@@ -113,8 +147,8 @@ int main(int argc, char * argv[]){
 	//Arrays of mutexes for ArrayBuffer and output file
 	pthread_mutex_t buffmutex;
 	pthread_mutex_t outmutex;
-	struct thread request_info[numRequesters];
-	struct thread resolve_info[numResolvers];
+	struct Thread request_info[numRequesters];
+	struct Thread resolve_info[numResolvers];
 
     printf("Requersters: %d\n", numRequesters);
     printf("Resolvers: %d\n", numResolvers);
@@ -129,62 +163,82 @@ int main(int argc, char * argv[]){
 		return EXIT_FAILURE;
     }
 
-	outfile = fopen(resolversLogFileName, "w"); //Open output fileor try at least
-	if(!outfile){
-		perror("Error Opening Output File");
+	 //Open output files
+    resolverLog = fopen(resolversLogFileName, "w");
+	if(!requestLog){
+		perror("Error Opening requester Output File");
 		return EXIT_FAILURE;
 	}
-	int i;
-	for(i=0; i<numInputFiles; i++){ 	//Open input files or try at least
-		inputfps[i] = fopen(argv[i+5], "r");
+    if(!resolverLog){
+		perror("Error Opening resolver Output File");
+		return EXIT_FAILURE;
 	}
-	queue_init(&sharedBuffer, 5); //Initialize sharedBuffer ArrayBuffer
+
+    file_buffer_init(&sharedInputFiles, numInputFiles);
+
+    for(int i=0; i<numInputFiles; i++){
+		inputfps[i] = fopen(argv[i+5], "r");
+        fileBufferPush(&sharedInputFiles, inputfps[i]);
+	}
+    // file_buffer_init(&sharedInputFiles, *inputfps, numInputFiles);
+
+    //Initialize sharedBuffer ArrayBuffer
+	buffer_init(&sharedBuffer, 15);
 	//Initialize mutexes
 	pthread_mutex_init(&buffmutex, NULL);
 	pthread_mutex_init(&outmutex, NULL);
 	//Create request pthreads
-	for(i=0; i<numRequesters; i++){
+	for(int i=0; i<numRequesters; i++){
+        resolve_info[i].logFile = requestLog;
 		//Set data for struct to pass to current pthread
-        if(i >= numInputFiles)
-            request_info[i].thread_file = inputfps[i - numInputFiles];
-        else
-            request_info[i].thread_file = inputfps[i];
+        if(i >= numInputFiles){
+            request_info[i].readFile = inputfps[i - numInputFiles];
+            request_info[i].currentFile = getFileNode(&sharedInputFiles, i - numInputFiles);
+        }
+        else{
+            request_info[i].readFile = inputfps[i];
+            request_info[i].currentFile = getFileNode(&sharedInputFiles, i);
+        }
 
-        //request_info[i].thread_file = inputfps[i];
-
-		request_info[i].buffmutex   = &buffmutex;
-		request_info[i].outmutex    = NULL;
-		request_info[i].sharedBuffer      = &sharedBuffer;
+        request_info[i].sharedInputFiles = &sharedInputFiles;
+		request_info[i].buffmutex = &buffmutex;
+		resolve_info[i].outmutex = &outmutex;
+		request_info[i].sharedBuffer = &sharedBuffer;
 		//pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine) (void *), void *arg); arg==id passed to request
         pthread_create(&(requests[i]), NULL, request, &(request_info[i]));
 		printf("Create request %d\n", i);
     }
-	//Create resolve pthreads
-    for(i=0; i<numResolvers; i++){
-		resolve_info[i].thread_file = outfile;
-		resolve_info[i].buffmutex   = &buffmutex;
-		resolve_info[i].outmutex    = &outmutex;
-		resolve_info[i].sharedBuffer      = &sharedBuffer;
+	// Create resolve pthreads
+    for(int i=0; i<numResolvers; i++){
+		resolve_info[i].logFile = resolverLog;
+		resolve_info[i].buffmutex = &buffmutex;
+		resolve_info[i].outmutex = &outmutex;
+		resolve_info[i].sharedBuffer = &sharedBuffer;
 		pthread_create(&(resolves[i]), NULL, resolve, &(resolve_info[i]));
 		printf("Create resolve %d\n", i);
     }
-    //Wait for request threads to complete
-    for(i=0; i<numRequesters; i++){
-        pthread_join(requests[i], NULL);
-		printf("Requested %d \n", i);
+    ThreadInfo *status;
+    // Wait for request threads to complete
+    for(int i=0; i<numRequesters; i++){
+        // int pthread_join(pthread_t thread, void **retval); joins with a termindated thread
+        pthread_join(requests[i], &status);
+        printf("Thread %d serviced %d files.\n\n", status->tid, status->filesServiced);
+        fprintf(requestLog, "Thread %d serviced %d files.\n", status->tid, status->filesServiced);
+        free(status);
 	}
-	requests_exist=false;
-    //Wait for resolve threads to complete
-    for(i=0; i<numResolvers; i++){
-        pthread_join(resolves[i], NULL); // int pthread_join(pthread_t thread, void **retval); joins with a termindated thread
-		printf("Resolved %d \n", i);
+	finished(&sharedBuffer);
+    // Wait for resolve threads to complete
+    for(int i=0; i<numResolvers; i++){
+        pthread_join(resolves[i], NULL);
+		printf("Finished Resolved %d \n", i);
 	}
-	queue_cleanup(&sharedBuffer); //Clean ArrayBuffer
-	fclose(outfile);	//Close output file
-	for(i=0; i<numInputFiles; i++){
-		fclose(inputfps[i]); //Close input files
-	}
-	//Destroy the mutexes
+    // free ArrayBuffer
+	buffer_cleanup(&sharedBuffer);
+	fclose(resolverLog);
+	fclose(requestLog);
+    // close files and free
+    closeFileBuffer(&sharedInputFiles);
+	// Destroy the mutexes
 	pthread_mutex_destroy(&buffmutex);
 	pthread_mutex_destroy(&outmutex);
     return 0;
