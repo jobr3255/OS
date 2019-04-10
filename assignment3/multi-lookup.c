@@ -11,6 +11,7 @@
 #include "FileBuffer.c"
 #include <sys/types.h>
 #include <sys/syscall.h>
+#include <time.h>
 
 #define USAGE "multi-lookup <# requester> <# resolver> <requester log> <resolver log> [ <data file> ...]"
 #define MINARGS 6
@@ -19,7 +20,7 @@
 #define INPUTFS "%1024s"
 #define MAX_INPUT_FILES 10
 #define MAX_RESOLVER_THREADS 10
-#define MAX_REQUESTER_THREADS 5
+#define MAX_REQUESTER_THREADS 8
 #define MAX_NAME_LENGTHS 1025
 #define MAX_IP_LENGTH INET6_ADDRSTRLEN
 
@@ -122,16 +123,18 @@ void* resolve(void* data){
 }
 
 int main(int argc, char * argv[]){
-
+    clock_t start, end;
+    double cpu_time_used;
+    start = clock();
     if(argc<MINARGS){
         printf("ERROR: Missing arguments.\n");
 		printf("Usage: %s\n", USAGE);
 		return EXIT_FAILURE;
 	}
     // requesters are the threads that read from the files
-    unsigned int numRequesters = atoi(argv[1]);
+    int numRequesters = atoi(argv[1]);
     // resolvers are the threads that write the output to the files
-    unsigned numResolvers = atoi(argv[2]);
+    int numResolvers = atoi(argv[2]);
     char* requesterLogFileName = argv[3];
     char* resolversLogFileName = argv[4];
     int numInputFiles = argc - 5;
@@ -241,5 +244,8 @@ int main(int argc, char * argv[]){
 	// Destroy the mutexes
 	pthread_mutex_destroy(&buffmutex);
 	pthread_mutex_destroy(&outmutex);
+    end = clock();
+    cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+    printf("\nTotal runtime: %f\n\n", cpu_time_used);
     return 0;
 }

@@ -1,0 +1,57 @@
+Number for requester thread = 1
+Number for resolver thread = 1
+Total run time: 3.383800
+Thread 28435 serviced 5 files.
+
+
+Number for requester thread = 1
+Number for resolver thread = 3
+Total run time: 0.625871
+Thread 28506 serviced 5 files.
+
+
+Number for requester thread = 3
+Number for resolver thread = 1
+Total run time: 2.000473
+Thread 28489 serviced 4 files.
+Thread 28490 serviced 3 files.
+Thread 28491 serviced 3 files.
+
+
+Number for requester thread = 3
+Number for resolver thread = 3
+Total run time: 0.862825
+Thread 28518 serviced 3 files.
+Thread 28519 serviced 2 files.
+Thread 28520 serviced 3 files.
+
+
+Number for requester thread = 5
+Number for resolver thread = 5
+Total run time: 1.042514
+Thread 28533 serviced 2 files.
+Thread 28534 serviced 3 files.
+Thread 28535 serviced 3 files.
+Thread 28536 serviced 1 files.
+Thread 28537 serviced 1 files.
+
+
+Number for requester thread = 8
+Number for resolver thread = 5
+Total run time: 2.574768
+Thread 28579 serviced 3 files.
+Thread 28580 serviced 1 files.
+Thread 28581 serviced 2 files.
+Thread 28582 serviced 2 files.
+Thread 28583 serviced 1 files.
+Thread 28584 serviced 2 files.
+Thread 28585 serviced 2 files.
+Thread 28586 serviced 3 files.
+
+
+
+
+If the number of requesters is more than the number of resolvers the performance
+goes down by quite a bit. The most efficient way to run the program is to have more
+resolvers than requesters since the resolvers have to use the DNS lookup and
+take more time to do that than to just read files.
