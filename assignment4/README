@@ -49,3 +49,6 @@ Run pager-basic test:
 
 Run API test:
  ./test-api
+
+ ---My Additions---
+ test-prop - runs lru implementation and outputs the swaps as a 2D array for each process to be used in creating the probability matrix for the predictive implmentation

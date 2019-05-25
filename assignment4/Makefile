@@ -6,12 +6,15 @@ LFLAGS = -g -Wall -Wextra
 
 .PHONY: all clean
 
-all: test-basic test-lru test-predict test-api
+all: test-basic test-lru test-predict test-api test-prob
 
 test-basic: simulator.o pager-basic.o
 	$(CC) $(LFLAGS) $^ -o $@
 
 test-lru: simulator.o pager-lru.o
+	$(CC) $(LFLAGS) $^ -o $@
+
+test-prob: simulator.o pager-prob.o
 	$(CC) $(LFLAGS) $^ -o $@
 
 test-predict: simulator.o pager-predict.o
@@ -23,13 +26,16 @@ test-api: simulator.o api-test.o
 simulator.o: simulator.c programs.c simulator.h
 	$(CC) $(CFLAGS) $<
 
-pager-basic.o: pager-basic.c simulator.h 
+pager-basic.o: pager-basic.c simulator.h
 	$(CC) $(CFLAGS) $<
 
-pager-lru.o: pager-lru.c simulator.h 
+pager-lru.o: pager-lru.c simulator.h
 	$(CC) $(CFLAGS) $<
 
-pager-predict.o: pager-predict.c simulator.h 
+pager-prob.o: pager-prob.c simulator.h
+	$(CC) $(CFLAGS) $<
+
+pager-predict.o: pager-predict.c simulator.h
 	$(CC) $(CFLAGS) $<
 
 api-test.o:  api-test.c simulator.h
